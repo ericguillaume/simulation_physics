@@ -3,6 +3,7 @@
  */
 
 import { config } from './config.js';
+import { calculateTotalEnergy } from './energy.js';
 
 export class Particle {
   constructor(x, y, vx, vy, charge, mass, fixed = false, z = 0.5, vz = 0, isPhoton = false, energy = 0) {
@@ -530,10 +531,13 @@ export class Universe {
    * Perform one simulation step
    */
   step() {
-    // 
-    
+    // Compute and log total energy of the system
+    const energy = calculateTotalEnergy(this);
+    console.log('Total Energy:', energy.total.toExponential(6), 
+                '| Kinetic:', energy.kinetic.toExponential(6),
+                '| Photon:', energy.photon.toExponential(6),
+                '| Electrostatic:', energy.electrostatic.toExponential(6));
 
-    // log all speeds
     // Check electron speeds and emit photons if needed (at the beginning of step)
     this.checkAndEmitPhotons();
 
