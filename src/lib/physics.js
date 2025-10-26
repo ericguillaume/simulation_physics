@@ -269,55 +269,58 @@ export class Universe {
    * PHYSICS PRINCIPLE: Energy radiation from fast-moving electrons
    * 
    * HOW IT WORKS:
-   * 1. SPEED CHECK: Calculate speed (norm of velocity vector) for each electron
+   * 1. PHOTON EMISSION CHECK: If config.photonEmission.enabled is false, skip entirely
+   *    - No photons will be created at all
+   * 
+   * 2. SPEED CHECK: Calculate speed (norm of velocity vector) for each electron
    *    - speed = √(vx² + vy² + vz²)
    *    - Only applies to electrons (charge < 0), never to protons
    * 
-   * 2. EMISSION LIMIT: If config.photonEmission.onePhotonPerElectron is true:
+   * 3. EMISSION LIMIT: If config.photonEmission.onePhotonPerElectron is true:
    *    - Each electron can only emit one photon in its lifetime
    *    - Tracked via particle.hasEmittedPhoton flag
    * 
-   * 3. ENERGY EMISSION: If speed > threshold (1e-3):
+   * 4. ENERGY EMISSION: If speed > threshold (1e-3):
    *    - Initial kinetic energy: KE_initial = 1/2 × m × v²
    *    - Electron speed reduced by factor of √2: v_new = v / √2
    *    - New kinetic energy: KE_new = 1/2 × m × (v/√2)² = 1/4 × m × v²
    *    - Energy radiated: ΔKE = KE_initial - KE_new = 1/4 × m × v²
    * 
-   * 4. PHOTON CREATION: Create electromagnetic particle (photon)
+   * 5. PHOTON CREATION: Create electromagnetic particle (photon)
    *    - Energy: E_photon = 1/4 × m × v²
    *    - Position: Same as electron position
    *    - Velocity: Same direction as electron, normalized to maintain momentum
    *    - Charge: 0 (photons are neutral)
    *    - Mass: 0 (photons are massless)
    * 
-   * 5. ENERGY CONSERVATION: Total energy is conserved
+   * 6. ENERGY CONSERVATION: Total energy is conserved
    *    - Electron loses kinetic energy: from 1/2 × m × v² to 1/4 × m × v²
    *    - Photon gains that energy: E_photon = 1/4 × m × v²
    *    - Total: 1/4 × m × v² + 1/4 × m × v² = 1/2 × m × v² ✓
    */
   checkAndEmitPhotons() {
     const newPhotons = [];
-    
+
     for (let particle of this.particles) {
       // Only check electrons (charge < 0), never protons
       if (particle.charge >= 0 || particle.isPhoton) continue;
-      
+
       // If onePhotonPerElectron is enabled, skip electrons that have already emitted
       if (config.photonEmission.onePhotonPerElectron && particle.hasEmittedPhoton) {
         continue;
       }
-      
+
       // Calculate speed (norm of velocity vector)
       const vx = particle.vx;
       const vy = particle.vy;
       const vz = this.mode3D ? particle.vz : 0;
       const speed = Math.sqrt(vx * vx + vy * vy + vz * vz);
-      
+
       // Check if speed exceeds threshold
       if (speed > this.photonEmissionSpeedThreshold) {
         // Calculate photon energy: E = 1/4 × m × v²
         const photonEnergy = 0.25 * this.electronMass * speed * speed;
-        
+
         // Reduce electron speed by factor of √2
         const speedReductionFactor = Math.sqrt(2);
         particle.vx /= speedReductionFactor;
@@ -325,38 +328,40 @@ export class Universe {
         if (this.mode3D) {
           particle.vz /= speedReductionFactor;
         }
-        
+
         // Mark electron as having emitted a photon
         particle.hasEmittedPhoton = true;
-        
+
         // Create photon with same position and normalized velocity direction
         // Photon velocity is in same direction as electron
         const newSpeed = speed / speedReductionFactor; // New electron speed
         const photonSpeed = newSpeed; // Photon moves at same speed as reduced electron
-        
+
         const photonVx = (vx / speed) * photonSpeed;
         const photonVy = (vy / speed) * photonSpeed;
         const photonVz = this.mode3D ? ((vz / speed) * photonSpeed) : 0;
-        
-        // Create photon particle
-        const photon = new Particle(
-          particle.x, 
-          particle.y, 
-          photonVx, 
-          photonVy, 
-          0, // charge = 0
-          0, // mass = 0
-          false, // not fixed
-          particle.z,
-          photonVz,
-          true, // isPhoton = true
-          photonEnergy
-        );
-        
-        newPhotons.push(photon);
+
+        if (config.photonEmission.enabled) {
+          // Create photon particle
+          const photon = new Particle(
+            particle.x,
+            particle.y,
+            photonVx,
+            photonVy,
+            0, // charge = 0
+            0, // mass = 0
+            false, // not fixed
+            particle.z,
+            photonVz,
+            true, // isPhoton = true
+            photonEnergy
+          );
+
+          newPhotons.push(photon);
+        }
       }
     }
-    
+
     // Add all new photons to the universe
     for (let photon of newPhotons) {
       this.addParticle(photon);
@@ -399,51 +404,86 @@ export class Universe {
 
   /**
    * Apply boundary conditions to a particle
-   * When a particle reaches or passes the boundaries, it is clamped to the closest point on the boundary
-   * and its velocity and acceleration are set to zero in all directions
+   * 
+   * PHOTONS: Bounce back elastically (reflect off walls like a mirror)
+   * ELECTRONS & PROTONS: Clamp to boundary and stop (velocity = 0)
    */
   applyBoundaryConditions(particle) {
-    let hitBoundary = false;
+    if (particle.isPhoton) {
+      // Photons bounce back elastically (reflect off walls)
 
-    // X-axis boundary conditions - clamp to closest boundary point
-    if (particle.x < 0) {
-      particle.x = 0;
-      hitBoundary = true;
-    } else if (particle.x > this.size) {
-      particle.x = this.size;
-      hitBoundary = true;
-    }
+      // X-axis boundary - reflect vx if hitting left or right wall
+      if (particle.x < 0) {
+        particle.x = -particle.x; // Reflect position back inside
+        particle.vx = -particle.vx; // Reverse velocity
+      } else if (particle.x > this.size) {
+        particle.x = 2 * this.size - particle.x; // Reflect position back inside
+        particle.vx = -particle.vx; // Reverse velocity
+      }
 
-    // Y-axis boundary conditions - clamp to closest boundary point
-    if (particle.y < 0) {
-      particle.y = 0;
-      hitBoundary = true;
-    } else if (particle.y > this.size) {
-      particle.y = this.size;
-      hitBoundary = true;
-    }
+      // Y-axis boundary - reflect vy if hitting top or bottom wall
+      if (particle.y < 0) {
+        particle.y = -particle.y; // Reflect position back inside
+        particle.vy = -particle.vy; // Reverse velocity
+      } else if (particle.y > this.size) {
+        particle.y = 2 * this.size - particle.y; // Reflect position back inside
+        particle.vy = -particle.vy; // Reverse velocity
+      }
 
-    // Z-axis boundary conditions (3D only) - clamp to closest boundary point
-    if (this.mode3D) {
-      if (particle.z < 0) {
-        particle.z = 0;
+      // Z-axis boundary (3D only) - reflect vz if hitting front or back wall
+      if (this.mode3D) {
+        if (particle.z < 0) {
+          particle.z = -particle.z; // Reflect position back inside
+          particle.vz = -particle.vz; // Reverse velocity
+        } else if (particle.z > this.size) {
+          particle.z = 2 * this.size - particle.z; // Reflect position back inside
+          particle.vz = -particle.vz; // Reverse velocity
+        }
+      }
+    } else {
+      // Electrons and protons: clamp to boundary and stop
+      let hitBoundary = false;
+
+      // X-axis boundary conditions - clamp to closest boundary point
+      if (particle.x < 0) {
+        particle.x = 0;
         hitBoundary = true;
-      } else if (particle.z > this.size) {
-        particle.z = this.size;
+      } else if (particle.x > this.size) {
+        particle.x = this.size;
         hitBoundary = true;
       }
-    }
 
-    // If particle hit any boundary, set velocity and acceleration to zero in all directions
-    if (hitBoundary) {
-      particle.vx = 0;
-      particle.vy = 0;
-      particle.accelerationX = 0;
-      particle.accelerationY = 0;
-      
+      // Y-axis boundary conditions - clamp to closest boundary point
+      if (particle.y < 0) {
+        particle.y = 0;
+        hitBoundary = true;
+      } else if (particle.y > this.size) {
+        particle.y = this.size;
+        hitBoundary = true;
+      }
+
+      // Z-axis boundary conditions (3D only) - clamp to closest boundary point
       if (this.mode3D) {
-        particle.vz = 0;
-        particle.accelerationZ = 0;
+        if (particle.z < 0) {
+          particle.z = 0;
+          hitBoundary = true;
+        } else if (particle.z > this.size) {
+          particle.z = this.size;
+          hitBoundary = true;
+        }
+      }
+
+      // If particle hit any boundary, set velocity and acceleration to zero in all directions
+      if (hitBoundary) {
+        particle.vx = 0;
+        particle.vy = 0;
+        particle.accelerationX = 0;
+        particle.accelerationY = 0;
+
+        if (this.mode3D) {
+          particle.vz = 0;
+          particle.accelerationZ = 0;
+        }
       }
     }
   }
@@ -533,10 +573,10 @@ export class Universe {
   step() {
     // Compute and log total energy of the system
     const energy = calculateTotalEnergy(this);
-    console.log('Total Energy:', energy.total.toExponential(6), 
-                '| Kinetic:', energy.kinetic.toExponential(6),
-                '| Photon:', energy.photon.toExponential(6),
-                '| Electrostatic:', energy.electrostatic.toExponential(6));
+    console.log('Total Energy:', energy.total.toExponential(6),
+      '| Kinetic:', energy.kinetic.toExponential(6),
+      '| Photon:', energy.photon.toExponential(6),
+      '| Electrostatic:', energy.electrostatic.toExponential(6));
 
     // Check electron speeds and emit photons if needed (at the beginning of step)
     this.checkAndEmitPhotons();
@@ -556,11 +596,11 @@ export class Universe {
     for (let i = 0; i < this.particles.length; i++) {
       // Skip photons - they don't interact with other particles
       if (this.particles[i].isPhoton) continue;
-      
+
       for (let j = i + 1; j < this.particles.length; j++) {
         // Skip photons - they don't interact with other particles
         if (this.particles[j].isPhoton) continue;
-        
+
         const force = this.calculateForce(this.particles[i], this.particles[j]);
 
         // Newton's third law: equal and opposite forces
@@ -579,7 +619,7 @@ export class Universe {
       for (let i = 0; i < this.particles.length; i++) {
         // Skip photons - they are not affected by gravity
         if (this.particles[i].isPhoton) continue;
-        
+
         const gravityForce = this.calculateGravityForce(this.particles[i]);
 
         // Add gravity force to total forces
@@ -594,7 +634,7 @@ export class Universe {
       for (let i = 0; i < this.particles.length; i++) {
         // Skip photons - they are not affected by gravity
         if (this.particles[i].isPhoton) continue;
-        
+
         const groundGravityForce = this.calculateGroundGravityForce(this.particles[i]);
 
         // Add ground gravity force to total forces

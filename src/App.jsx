@@ -1113,13 +1113,13 @@ function App() {
                 <p>• Electrostatic: F = -K × q₁ × q₂ / r² (K default = 10e-6)</p>
                 <p>• Collision repulsion: F = K_collision × 1e-9 / r⁴ (toggleable)</p>
                 <p>• Gravity: F = mass × K_gravity × 1e-4 toward center (0.5, 0.5, 0.5) (toggleable, off by default)</p>
-                <p>• Photon emission: electrons emit photons when speed &gt; 1e-3</p>
-                <p>• One photon per electron (default: enabled)</p>
+                <p>• Photon emission: electrons emit photons when speed &gt; 1e-3 (configurable)</p>
+                <p>• Photon creation can be disabled via config.photonEmission.enabled</p>
+                <p>• One photon per electron limit (configurable)</p>
                 <p>• Energy conservation: E_photon = ¼ × m × v²</p>
+                <p>• Boundary behavior: photons bounce back elastically, electrons/protons stop</p>
                 <p>• Acceleration: a = F / m</p>
                 <p>• Velocity damping: K_brake × 1e-6 per step (toggleable, off by default)</p>
-                <p>• Electron bounce: v = 1/4000 units</p>
-                <p>• Proton bounce: elastic (same speed)</p>
                 <p>• Bound electrons: 0.02-0.04 units from proton</p>
                 <p>• Colored lines show velocity vectors</p>
               </CardContent>
