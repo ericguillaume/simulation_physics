@@ -2,6 +2,7 @@
  * Physics simulation for 2D/3D universe with electrostatic forces
  */
 
+import { config } from './config.js';
 
 export class Particle {
   constructor(x, y, vx, vy, charge, mass, fixed = false, z = 0.5, vz = 0, isPhoton = false, energy = 0) {
@@ -16,6 +17,7 @@ export class Particle {
     this.fixed = fixed;
     this.isPhoton = isPhoton; // Flag for electromagnetic particles (photons)
     this.energy = energy; // Energy for photons
+    this.hasEmittedPhoton = false; // Track if this electron has already emitted a photon
     // Force tracking for diagnostics
     this.forceElectroX = 0;
     this.forceElectroY = 0;
@@ -270,20 +272,24 @@ export class Universe {
    *    - speed = √(vx² + vy² + vz²)
    *    - Only applies to electrons (charge < 0), never to protons
    * 
-   * 2. ENERGY EMISSION: If speed > threshold (1e-3):
+   * 2. EMISSION LIMIT: If config.photonEmission.onePhotonPerElectron is true:
+   *    - Each electron can only emit one photon in its lifetime
+   *    - Tracked via particle.hasEmittedPhoton flag
+   * 
+   * 3. ENERGY EMISSION: If speed > threshold (1e-3):
    *    - Initial kinetic energy: KE_initial = 1/2 × m × v²
    *    - Electron speed reduced by factor of √2: v_new = v / √2
    *    - New kinetic energy: KE_new = 1/2 × m × (v/√2)² = 1/4 × m × v²
    *    - Energy radiated: ΔKE = KE_initial - KE_new = 1/4 × m × v²
    * 
-   * 3. PHOTON CREATION: Create electromagnetic particle (photon)
+   * 4. PHOTON CREATION: Create electromagnetic particle (photon)
    *    - Energy: E_photon = 1/4 × m × v²
    *    - Position: Same as electron position
    *    - Velocity: Same direction as electron, normalized to maintain momentum
    *    - Charge: 0 (photons are neutral)
    *    - Mass: 0 (photons are massless)
    * 
-   * 4. ENERGY CONSERVATION: Total energy is conserved
+   * 5. ENERGY CONSERVATION: Total energy is conserved
    *    - Electron loses kinetic energy: from 1/2 × m × v² to 1/4 × m × v²
    *    - Photon gains that energy: E_photon = 1/4 × m × v²
    *    - Total: 1/4 × m × v² + 1/4 × m × v² = 1/2 × m × v² ✓
@@ -294,6 +300,11 @@ export class Universe {
     for (let particle of this.particles) {
       // Only check electrons (charge < 0), never protons
       if (particle.charge >= 0 || particle.isPhoton) continue;
+      
+      // If onePhotonPerElectron is enabled, skip electrons that have already emitted
+      if (config.photonEmission.onePhotonPerElectron && particle.hasEmittedPhoton) {
+        continue;
+      }
       
       // Calculate speed (norm of velocity vector)
       const vx = particle.vx;
@@ -313,6 +324,9 @@ export class Universe {
         if (this.mode3D) {
           particle.vz /= speedReductionFactor;
         }
+        
+        // Mark electron as having emitted a photon
+        particle.hasEmittedPhoton = true;
         
         // Create photon with same position and normalized velocity direction
         // Photon velocity is in same direction as electron
@@ -516,6 +530,10 @@ export class Universe {
    * Perform one simulation step
    */
   step() {
+    // 
+    
+
+    // log all speeds
     // Check electron speeds and emit photons if needed (at the beginning of step)
     this.checkAndEmitPhotons();
 

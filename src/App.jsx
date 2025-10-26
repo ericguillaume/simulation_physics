@@ -1109,9 +1109,13 @@ function App() {
               <CardContent className="text-xs text-slate-400 space-y-2">
                 <p>• Protons (red, +1 charge, mass = 100)</p>
                 <p>• Electrons (blue, -1 charge, mass = 1)</p>
+                <p>• Photons (yellow/gold, neutral, massless)</p>
                 <p>• Electrostatic: F = -K × q₁ × q₂ / r² (K default = 10e-6)</p>
                 <p>• Collision repulsion: F = K_collision × 1e-9 / r⁴ (toggleable)</p>
                 <p>• Gravity: F = mass × K_gravity × 1e-4 toward center (0.5, 0.5, 0.5) (toggleable, off by default)</p>
+                <p>• Photon emission: electrons emit photons when speed &gt; 1e-3</p>
+                <p>• One photon per electron (default: enabled)</p>
+                <p>• Energy conservation: E_photon = ¼ × m × v²</p>
                 <p>• Acceleration: a = F / m</p>
                 <p>• Velocity damping: K_brake × 1e-6 per step (toggleable, off by default)</p>
                 <p>• Electron bounce: v = 1/4000 units</p>
