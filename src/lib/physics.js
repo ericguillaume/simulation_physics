@@ -261,11 +261,15 @@ export class Universe {
 
     return { fx, fy, fz };
   }
-  
+
   shouldEmitPhoton(particle) {
     const speed = Math.sqrt(particle.vx * particle.vx + particle.vy * particle.vy + particle.vz * particle.vz);
-    return speed > this.photonEmissionSpeedThreshold;
-  } 
+    if (speed < this.photonEmissionSpeedThreshold) {
+      return false;
+    }
+    // Return true with probability 0.001 * speed / this.photonEmissionSpeedThreshold
+    return Math.random() < 0.00001 * speed / this.photonEmissionSpeedThreshold;
+  }
 
   /**
    * Check electron speeds and emit photons if speed exceeds threshold
