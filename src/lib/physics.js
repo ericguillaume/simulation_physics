@@ -272,6 +272,94 @@ export class Universe {
   }
 
   /**
+   * Manage photon emission from a particle
+   * 
+   * PHYSICS PRINCIPLE: Energy radiation from fast-moving electrons
+   * 
+   * HOW IT WORKS:
+   * 1. ENERGY CALCULATION: Calculate initial kinetic energy of electron
+   *    - Initial KE = 1/2 × m × v²
+   * 
+   * 2. ENERGY DISTRIBUTION: Distribute energy between electron and photon
+   *    - Photon gets energyRatio of the initial kinetic energy
+   *    - Electron keeps (1 - energyRatio) of the initial kinetic energy
+   * 
+   * 3. SPEED REDUCTION: Calculate new electron speed based on remaining energy
+   *    - New KE = (1 - energyRatio) × Initial KE
+   *    - 1/2 × m × v_new² = (1 - energyRatio) × 1/2 × m × v²
+   *    - v_new = v × √(1 - energyRatio)
+   *    - Speed reduction factor = 1 / √(1 - energyRatio)
+   * 
+   * 4. PHOTON CREATION: Create electromagnetic particle (photon)
+   *    - Energy: E_photon = energyRatio × 1/2 × m × v²
+   *    - Position: Same as electron position
+   *    - Velocity: Same direction as electron, with appropriate speed
+   *    - Charge: 0 (photons are neutral)
+   *    - Mass: 0 (photons are massless)
+   * 
+   * @param {Particle} particle - The electron particle emitting the photon
+   * @param {number} speed - Current speed of the electron
+   * @param {number} vx - X velocity component
+   * @param {number} vy - Y velocity component
+   * @param {number} vz - Z velocity component
+   * @param {number} energyRatio - Fraction of initial kinetic energy given to photon (default: 0.5)
+   * @returns {Particle|null} New photon particle or null if photon emission is disabled
+   */
+  managePhotonEmission(particle, speed, vx, vy, vz, energyRatio = 0.5) {
+    // Calculate initial kinetic energy
+    const initialKE = 0.5 * this.electronMass * speed * speed;
+
+    // Calculate photon energy based on energy ratio
+    const photonEnergy = energyRatio * initialKE;
+
+    // Calculate speed reduction factor
+    // New KE = (1 - energyRatio) × Initial KE
+    // 1/2 × m × v_new² = (1 - energyRatio) × 1/2 × m × v²
+    // v_new² = (1 - energyRatio) × v²
+    // v_new = v × √(1 - energyRatio)
+    const speedReductionFactor = 1 / Math.sqrt(1 - energyRatio);
+
+    // Reduce electron speed
+    particle.vx /= speedReductionFactor;
+    particle.vy /= speedReductionFactor;
+    if (this.mode3D) {
+      particle.vz /= speedReductionFactor;
+    }
+
+    // Mark electron as having emitted a photon
+    particle.hasEmittedPhoton = true;
+
+    // Create photon with same position and normalized velocity direction
+    const newSpeed = speed / speedReductionFactor; // New electron speed
+    const photonSpeed = newSpeed; // Photon moves at same speed as reduced electron
+
+    const photonVx = (vx / speed) * photonSpeed;
+    const photonVy = (vy / speed) * photonSpeed;
+    const photonVz = this.mode3D ? ((vz / speed) * photonSpeed) : 0;
+
+    // Create photon particle
+    if (config.photonEmission.enabled) {
+      const photon = new Particle(
+        particle.x,
+        particle.y,
+        photonVx,
+        photonVy,
+        0, // charge = 0
+        0, // mass = 0
+        false, // not fixed
+        particle.z,
+        photonVz,
+        true, // isPhoton = true
+        photonEnergy
+      );
+
+      return photon;
+    }
+
+    return null;
+  }
+
+  /**
    * Check electron speeds and emit photons if speed exceeds threshold
    * 
    * PHYSICS PRINCIPLE: Energy radiation from fast-moving electrons
@@ -326,45 +414,8 @@ export class Universe {
 
       // Check if speed exceeds threshold
       if (this.shouldEmitPhoton(particle)) {
-        // Calculate photon energy: E = 1/4 × m × v²
-        const photonEnergy = 0.25 * this.electronMass * speed * speed;
-
-        // Reduce electron speed by factor of √2
-        const speedReductionFactor = Math.sqrt(2);
-        particle.vx /= speedReductionFactor;
-        particle.vy /= speedReductionFactor;
-        if (this.mode3D) {
-          particle.vz /= speedReductionFactor;
-        }
-
-        // Mark electron as having emitted a photon
-        particle.hasEmittedPhoton = true;
-
-        // Create photon with same position and normalized velocity direction
-        // Photon velocity is in same direction as electron
-        const newSpeed = speed / speedReductionFactor; // New electron speed
-        const photonSpeed = newSpeed; // Photon moves at same speed as reduced electron
-
-        const photonVx = (vx / speed) * photonSpeed;
-        const photonVy = (vy / speed) * photonSpeed;
-        const photonVz = this.mode3D ? ((vz / speed) * photonSpeed) : 0;
-
-        if (config.photonEmission.enabled) {
-          // Create photon particle
-          const photon = new Particle(
-            particle.x,
-            particle.y,
-            photonVx,
-            photonVy,
-            0, // charge = 0
-            0, // mass = 0
-            false, // not fixed
-            particle.z,
-            photonVz,
-            true, // isPhoton = true
-            photonEnergy
-          );
-
+        const photon = this.managePhotonEmission(particle, speed, vx, vy, vz);
+        if (photon) {
           newPhotons.push(photon);
         }
       }
