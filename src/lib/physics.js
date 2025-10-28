@@ -3,7 +3,6 @@
  */
 
 import { config } from './config.js';
-import { calculateTotalEnergy } from './energy.js';
 
 export class Particle {
   constructor(x, y, vx, vy, charge, mass, fixed = false, z = 0.5, vz = 0, isPhoton = false, energy = 0) {
@@ -262,6 +261,11 @@ export class Universe {
 
     return { fx, fy, fz };
   }
+  
+  shouldEmitPhoton(particle) {
+    const speed = Math.sqrt(particle.vx * particle.vx + particle.vy * particle.vy + particle.vz * particle.vz);
+    return speed > this.photonEmissionSpeedThreshold;
+  } 
 
   /**
    * Check electron speeds and emit photons if speed exceeds threshold
@@ -317,7 +321,7 @@ export class Universe {
       const speed = Math.sqrt(vx * vx + vy * vy + vz * vz);
 
       // Check if speed exceeds threshold
-      if (speed > this.photonEmissionSpeedThreshold) {
+      if (this.shouldEmitPhoton(particle)) {
         // Calculate photon energy: E = 1/4 × m × v²
         const photonEnergy = 0.25 * this.electronMass * speed * speed;
 
@@ -571,12 +575,20 @@ export class Universe {
    * Perform one simulation step
    */
   step() {
+    // log number of particles per types
+    if (Math.random() < 0.005) { // ~0.5% chance, i.e. once every 200 times
+      console.log('Number of particles:', this.particles.length);
+      console.log('Number of electrons:', this.particles.filter(particle => particle.charge < 0).length);
+      console.log('Number of protons:', this.particles.filter(particle => particle.charge > 0).length);
+      console.log('Number of photons:', this.particles.filter(particle => particle.isPhoton).length);
+    }
+
     // Compute and log total energy of the system
-    const energy = calculateTotalEnergy(this);
-    console.log('Total Energy:', energy.total.toExponential(6),
-      '| Kinetic:', energy.kinetic.toExponential(6),
-      '| Photon:', energy.photon.toExponential(6),
-      '| Electrostatic:', energy.electrostatic.toExponential(6));
+    // const energy = calculateTotalEnergy(this);
+    // console.log('Total Energy:', energy.total.toExponential(6),
+    //   '| Kinetic:', energy.kinetic.toExponential(6),
+    //   '| Photon:', energy.photon.toExponential(6),
+    //   '| Electrostatic:', energy.electrostatic.toExponential(6));
 
     // Check electron speeds and emit photons if needed (at the beginning of step)
     this.checkAndEmitPhotons();
