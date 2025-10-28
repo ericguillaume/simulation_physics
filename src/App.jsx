@@ -335,12 +335,12 @@ function App() {
       ctx.fill()
       ctx.shadowBlur = 0
       
-      // Draw charge symbol
+      // Draw charge value as small number
       ctx.fillStyle = '#ffffff'
-      ctx.font = '14px monospace'
+      ctx.font = '8px monospace'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText('+', x, y)
+      ctx.fillText(particle.charge.toString(), x, y)
       
       // Draw velocity vector for moving protons
       const speed = Math.sqrt(particle.vx * particle.vx + particle.vy * particle.vy)
