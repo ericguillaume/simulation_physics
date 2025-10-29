@@ -302,22 +302,22 @@ export class Universe {
    * @param {number} vx - X velocity component
    * @param {number} vy - Y velocity component
    * @param {number} vz - Z velocity component
-   * @param {number} energyRatio - Fraction of initial kinetic energy given to photon (default: 0.5)
+   * @param {number} photonEnergyRatio - Fraction of initial kinetic energy given to photon (default: 0.5)
    * @returns {Particle|null} New photon particle or null if photon emission is disabled
    */
-  managePhotonEmission(particle, speed, vx, vy, vz, energyRatio = 0.5) {
+  managePhotonEmission(particle, speed, vx, vy, vz, photonEnergyRatio = 0.9) {
     // Calculate initial kinetic energy
     const initialKE = 0.5 * this.electronMass * speed * speed;
 
     // Calculate photon energy based on energy ratio
-    const photonEnergy = energyRatio * initialKE;
+    const photonEnergy = photonEnergyRatio * initialKE;
 
     // Calculate speed reduction factor
     // New KE = (1 - energyRatio) × Initial KE
     // 1/2 × m × v_new² = (1 - energyRatio) × 1/2 × m × v²
     // v_new² = (1 - energyRatio) × v²
     // v_new = v × √(1 - energyRatio)
-    const speedReductionFactor = 1 / Math.sqrt(1 - energyRatio);
+    const speedReductionFactor = 1 / Math.sqrt(1 - photonEnergyRatio);
 
     // Reduce electron speed
     particle.vx /= speedReductionFactor;
@@ -636,6 +636,8 @@ export class Universe {
       console.log('Number of electrons:', this.particles.filter(particle => particle.charge < 0).length);
       console.log('Number of protons:', this.particles.filter(particle => particle.charge > 0).length);
       console.log('Number of photons:', this.particles.filter(particle => particle.isPhoton).length);
+      console.log('Sum of positive charges:', this.particles.filter(particle => particle.charge > 0).reduce((sum, p) => sum + p.charge, 0));
+      console.log('Sum of negative charges:', this.particles.filter(particle => particle.charge < 0).reduce((sum, p) => sum + p.charge, 0));
     }
 
     // Compute and log total energy of the system
