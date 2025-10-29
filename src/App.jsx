@@ -162,6 +162,54 @@ function App() {
     }
   }, [gravityCoefficient])
   
+  // Helper function to calculate depth-based color intensity (VMD-style)
+  // Maps z-coordinate to brightness factor based on actual z-range in scene
+  // Higher z = closer to viewer = brighter, Lower z = farther = darker
+  const getDepthColorFactor = (z, minZ, maxZ) => {
+    if (!mode3D) return 1.0;
+    
+    // If all particles are at the same depth, return full brightness
+    if (maxZ - minZ < 1e-6) return 1.0;
+    
+    // Normalize z to [0, 1] based on actual range
+    const normalizedZ = (z - minZ) / (maxZ - minZ);
+    
+    // Map normalized z to brightness factor [0.3, 1.0]
+    // This gives a noticeable depth effect without making particles invisible
+    return 0.3 + (normalizedZ * 0.7);
+  };
+  
+  // Helper function to calculate depth-based size scaling (VMD-style)
+  // Maps z-coordinate to size factor based on actual z-range in scene
+  // Higher z = closer to viewer = larger, Lower z = farther = smaller
+  const getDepthSizeFactor = (z, minZ, maxZ) => {
+    if (!mode3D) return 1.0;
+    
+    // If all particles are at the same depth, return normal size
+    if (maxZ - minZ < 1e-6) return 1.0;
+    
+    // Normalize z to [0, 1] based on actual range
+    const normalizedZ = (z - minZ) / (maxZ - minZ);
+    
+    // Map normalized z to size factor [0.6, 1.0]
+    // This gives a subtle perspective effect
+    return 0.6 + (normalizedZ * 0.4);
+  };
+  
+  // Helper function to apply depth factor to RGB color
+  const applyDepthToColor = (baseColor, z, minZ, maxZ) => {
+    const factor = getDepthColorFactor(z, minZ, maxZ);
+    // Parse hex color to RGB
+    const r = parseInt(baseColor.slice(1, 3), 16);
+    const g = parseInt(baseColor.slice(3, 5), 16);
+    const b = parseInt(baseColor.slice(5, 7), 16);
+    // Apply depth factor
+    const newR = Math.round(r * factor);
+    const newG = Math.round(g * factor);
+    const newB = Math.round(b * factor);
+    return `rgb(${newR}, ${newG}, ${newB})`;
+  };
+
   const drawUniverse = () => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -203,9 +251,24 @@ function App() {
     }
     
     // Draw particles - photons first, then electrons, then protons
+    // In 3D mode, sort by z-coordinate (back to front) for proper depth perception
     const photons = universe.particles.filter(p => p.isPhoton)
     const electrons = universe.particles.filter(p => p.charge < 0 && !p.isPhoton)
     const protons = universe.particles.filter(p => p.charge > 0)
+    
+    // Calculate min and max z-values for depth scaling in 3D mode
+    let minZ = 0, maxZ = 1;
+    if (mode3D && universe.particles.length > 0) {
+      minZ = Math.min(...universe.particles.map(p => p.z));
+      maxZ = Math.max(...universe.particles.map(p => p.z));
+    }
+    
+    // Sort particles by depth in 3D mode (farther particles drawn first)
+    if (mode3D) {
+      photons.sort((a, b) => a.z - b.z);
+      electrons.sort((a, b) => a.z - b.z);
+      protons.sort((a, b) => a.z - b.z);
+    }
     
     // Draw photons first (electromagnetic particles)
     photons.forEach((particle) => {
@@ -226,19 +289,22 @@ function App() {
       const x = ((coord1 - viewMinX) / viewWidth) * size
       const y = ((coord2 - viewMinY) / viewHeight) * size
       
-      // Photon - yellow/gold with bright glow
+      // Photon - yellow/gold with bright glow (depth-adjusted in 3D mode)
+      const photonColor = applyDepthToColor('#fbbf24', particle.z, minZ, maxZ);
+      const photonSize = 4 * getDepthSizeFactor(particle.z, minZ, maxZ);
       ctx.beginPath()
-      ctx.arc(x, y, 4, 0, Math.PI * 2)
-      ctx.fillStyle = '#fbbf24'
-      ctx.shadowColor = '#fbbf24'
-      ctx.shadowBlur = 15
+      ctx.arc(x, y, photonSize, 0, Math.PI * 2)
+      ctx.fillStyle = photonColor
+      ctx.shadowColor = photonColor
+      ctx.shadowBlur = 15 * getDepthColorFactor(particle.z, minZ, maxZ)
       ctx.fill()
       ctx.shadowBlur = 0
       
       // Draw velocity vector for photons (showing light ray)
       const speed = Math.sqrt(particle.vx * particle.vx + particle.vy * particle.vy)
       if (speed > 0.001) {
-        ctx.strokeStyle = '#fbbf2480'
+        const vectorColor = applyDepthToColor('#fbbf24', particle.z, minZ, maxZ) + '80'; // Add alpha
+        ctx.strokeStyle = vectorColor
         ctx.lineWidth = 1
         ctx.beginPath()
         ctx.moveTo(x, y)
@@ -247,7 +313,8 @@ function App() {
       }
       
       // Draw a small star/sparkle effect
-      ctx.strokeStyle = '#fef3c7'
+      const sparkleColor = applyDepthToColor('#fef3c7', particle.z, minZ, maxZ);
+      ctx.strokeStyle = sparkleColor
       ctx.lineWidth = 1
       const sparkleSize = 3
       ctx.beginPath()
@@ -277,13 +344,15 @@ function App() {
       const x = ((coord1 - viewMinX) / viewWidth) * size
       const y = ((coord2 - viewMinY) / viewHeight) * size
       
-      ctx.beginPath()
-      ctx.arc(x, y, 6, 0, Math.PI * 2)
+      // Electron - blue with glow (depth-adjusted in 3D mode)
+      const electronColor = applyDepthToColor('#3b82f6', particle.z, minZ, maxZ);
+      const electronSize = 6 * getDepthSizeFactor(particle.z, minZ, maxZ);
       
-      // Electron - blue with glow
-      ctx.fillStyle = '#3b82f6'
-      ctx.shadowColor = '#3b82f6'
-      ctx.shadowBlur = 10
+      ctx.beginPath()
+      ctx.arc(x, y, electronSize, 0, Math.PI * 2)
+      ctx.fillStyle = electronColor
+      ctx.shadowColor = electronColor
+      ctx.shadowBlur = 10 * getDepthColorFactor(particle.z, minZ, maxZ)
       ctx.fill()
       ctx.shadowBlur = 0
       
@@ -297,7 +366,8 @@ function App() {
       // Draw velocity vector for moving electrons
       const speed = Math.sqrt(particle.vx * particle.vx + particle.vy * particle.vy)
       if (speed > 0.01) {
-        ctx.strokeStyle = '#3b82f680'
+        const vectorColor = applyDepthToColor('#3b82f6', particle.z, minZ, maxZ) + '80'; // Add alpha
+        ctx.strokeStyle = vectorColor
         ctx.lineWidth = 2
         ctx.beginPath()
         ctx.moveTo(x, y)
@@ -325,13 +395,15 @@ function App() {
       const x = ((coord1 - viewMinX) / viewWidth) * size
       const y = ((coord2 - viewMinY) / viewHeight) * size
       
-      ctx.beginPath()
-      ctx.arc(x, y, 12, 0, Math.PI * 2)
+      // Proton - red with glow (depth-adjusted in 3D mode)
+      const protonColor = applyDepthToColor('#ef4444', particle.z, minZ, maxZ);
+      const protonSize = 12 * getDepthSizeFactor(particle.z, minZ, maxZ);
       
-      // Proton - red with glow
-      ctx.fillStyle = '#ef4444'
-      ctx.shadowColor = '#ef4444'
-      ctx.shadowBlur = 20
+      ctx.beginPath()
+      ctx.arc(x, y, protonSize, 0, Math.PI * 2)
+      ctx.fillStyle = protonColor
+      ctx.shadowColor = protonColor
+      ctx.shadowBlur = 20 * getDepthColorFactor(particle.z, minZ, maxZ)
       ctx.fill()
       ctx.shadowBlur = 0
       
@@ -345,7 +417,8 @@ function App() {
       // Draw velocity vector for moving protons
       const speed = Math.sqrt(particle.vx * particle.vx + particle.vy * particle.vy)
       if (speed > 0.01) {
-        ctx.strokeStyle = '#ef444480'
+        const vectorColor = applyDepthToColor('#ef4444', particle.z, minZ, maxZ) + '80'; // Add alpha
+        ctx.strokeStyle = vectorColor
         ctx.lineWidth = 2
         ctx.beginPath()
         ctx.moveTo(x, y)
