@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Play, Pause, SkipForward, RotateCcw } from 'lucide-react'
 import { Universe, Particle } from './lib/physics'
+import { config } from './lib/config'
 import './App.css'
 
 /*
@@ -37,6 +38,7 @@ function App() {
   const [gravityCoefficient, setGravityCoefficient] = useState(10)
   const [groundGravityEnabled, setGroundGravityEnabled] = useState(false)
   const [groundGravityCoefficient, setGroundGravityCoefficient] = useState(10)
+  const [photonEmissionEnabled, setPhotonEmissionEnabled] = useState(false)
   const [mode3D, setMode3D] = useState(false)
   const [viewAxis, setViewAxis] = useState('xy') // 'xy', 'xz', or 'yz'
   const [numSteps, setNumSteps] = useState(1)
@@ -161,6 +163,11 @@ function App() {
       universeRef.current.setGravityCoefficient(gravityCoefficient)
     }
   }, [gravityCoefficient])
+  
+  // Update photon emission setting when changed
+  useEffect(() => {
+    config.photonEmission.enabled = photonEmissionEnabled
+  }, [photonEmissionEnabled])
   
   // Helper function to calculate depth-based color intensity (VMD-style)
   // Maps z-coordinate to brightness factor based on actual z-range in scene
@@ -1054,6 +1061,24 @@ function App() {
                   </div>
                   <p className="text-xs text-slate-400">
                     Attraction to ground: F = mass × K_ground_gravity × 1e-6 (toward y=1)
+                  </p>
+                </div>
+                
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="photonEmissionEnabled"
+                      checked={photonEmissionEnabled}
+                      onChange={(e) => setPhotonEmissionEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                    />
+                    <Label htmlFor="photonEmissionEnabled" className="text-white text-sm cursor-pointer">
+                      Photon Emission
+                    </Label>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Electrons emit photons when moving fast; photons transfer energy on collision
                   </p>
                 </div>
                 

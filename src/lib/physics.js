@@ -17,6 +17,7 @@ export class Particle {
     this.fixed = fixed;
     this.isPhoton = isPhoton; // Flag for electromagnetic particles (photons)
     this.energy = energy; // Energy for photons
+    this.age = 0; // Age in simulation steps (for photons)
     this.hasEmittedPhoton = false; // Track if this electron has already emitted a photon
     // Force tracking for diagnostics
     this.forceElectroX = 0;
@@ -34,6 +35,8 @@ export class Universe {
     this.electrostaticCoefficient = electrostaticCoefficient; // K_electro
     this.electronMass = 1; // Electron mass (constant)
     this.photonEmissionSpeedThreshold = 1e-3; // Speed threshold for photon emission
+    this.photonAbsorptionDistance = 3*1e-3; // Distance threshold for photon-electron collision
+    this.photonMinAgeForAbsorption = 100; // Minimum photon age (steps) before it can be absorbed
     this.staticProtons = true; // Protons are static by default
     this.strongForceEnabled = false; // Strong force disabled by default
     this.strongForceCoefficient = 10; // K_strong coefficient (default 10)
@@ -360,6 +363,102 @@ export class Universe {
   }
 
   /**
+   * Handle photon-electron energy transfer collisions
+   * 
+   * PHYSICS PRINCIPLE: Photon absorption by electrons
+   * 
+   * HOW IT WORKS:
+   * 1. COLLISION DETECTION: Check distance between each photon and electron
+   *    - distance = √((x_e - x_p)² + (y_e - y_p)² + (z_e - z_p)²)
+   *    - Collision occurs when distance < 1e-3
+   *    - Photon must be at least 100 steps old to be absorbed
+   * 
+   * 2. ENERGY TRANSFER: Photon energy is transferred to electron
+   *    - Old electron KE: KE_old = 1/2 × m × v_old²
+   *    - New electron KE: KE_new = KE_old + E_photon
+   *    - Energy conservation: total energy before = total energy after
+   * 
+   * 3. VELOCITY UPDATE: Calculate new electron velocity from increased energy
+   *    - KE_new = 1/2 × m × v_new²
+   *    - v_new = √(2 × KE_new / m)
+   *    - Direction maintained: velocity vector scaled to new speed
+   * 
+   * 4. PHOTON REMOVAL: Photon is absorbed and removed from simulation
+   *    - Marked for removal and deleted after collision processing
+   * 
+   * @returns {Array} Indices of photons to remove after absorption
+   */
+  handlePhotonElectronCollisions() {
+    const photonsToRemove = [];
+
+    // Find all photons and electrons
+    for (let i = 0; i < this.particles.length; i++) {
+      const photon = this.particles[i];
+      if (!photon.isPhoton) continue;
+
+      for (let j = 0; j < this.particles.length; j++) {
+        const electron = this.particles[j];
+        
+        // Only process electrons (negative charge, not photons)
+        if (electron.charge >= 0 || electron.isPhoton) continue;
+
+        // Calculate distance between photon and electron
+        const dx = electron.x - photon.x;
+        const dy = electron.y - photon.y;
+        const dz = this.mode3D ? (electron.z - photon.z) : 0;
+        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+        // Check for collision (distance and minimum age requirement)
+        if (distance < this.photonAbsorptionDistance && photon.age >= this.photonMinAgeForAbsorption) {
+          // Calculate current electron kinetic energy
+          const currentSpeed = Math.sqrt(
+            electron.vx * electron.vx + 
+            electron.vy * electron.vy + 
+            electron.vz * electron.vz
+          );
+          const currentKE = 0.5 * electron.mass * currentSpeed * currentSpeed;
+
+          // Add photon energy to electron
+          const newKE = currentKE + photon.energy;
+          const newSpeed = Math.sqrt(2 * newKE / electron.mass);
+
+          // Scale velocity vector to new speed (maintain direction)
+          if (currentSpeed > 0) {
+            const speedRatio = newSpeed / currentSpeed;
+            electron.vx *= speedRatio;
+            electron.vy *= speedRatio;
+            if (this.mode3D) {
+              electron.vz *= speedRatio;
+            }
+          } else {
+            // If electron was at rest, give it random direction with new speed
+            const theta = Math.random() * 2 * Math.PI;
+            const phi = this.mode3D ? Math.acos(2 * Math.random() - 1) : Math.PI / 2;
+            electron.vx = newSpeed * Math.sin(phi) * Math.cos(theta);
+            electron.vy = newSpeed * Math.sin(phi) * Math.sin(theta);
+            if (this.mode3D) {
+              electron.vz = newSpeed * Math.cos(phi);
+            }
+          }
+
+          // Mark photon for removal
+          if (!photonsToRemove.includes(i)) {
+            photonsToRemove.push(i);
+          }
+          break; // Photon can only be absorbed once
+        }
+      }
+    }
+
+    // Remove absorbed photons (iterate backwards to avoid index issues)
+    for (let i = photonsToRemove.length - 1; i >= 0; i--) {
+      this.particles.splice(photonsToRemove[i], 1);
+    }
+
+    return photonsToRemove.length;
+  }
+
+  /**
    * Check electron speeds and emit photons if speed exceeds threshold
    * 
    * PHYSICS PRINCIPLE: Energy radiation from fast-moving electrons
@@ -582,6 +681,8 @@ export class Universe {
       if (this.mode3D) {
         particle.z += particle.vz * this.dt;
       }
+      // Increment photon age (for absorption eligibility)
+      particle.age++;
       // Apply boundary conditions (photons disappear at boundaries)
       this.applyBoundaryConditions(particle);
       return;
@@ -646,6 +747,9 @@ export class Universe {
     //   '| Kinetic:', energy.kinetic.toExponential(6),
     //   '| Photon:', energy.photon.toExponential(6),
     //   '| Electrostatic:', energy.electrostatic.toExponential(6));
+
+    // Handle photon-electron collisions and energy transfer
+    this.handlePhotonElectronCollisions();
 
     // Check electron speeds and emit photons if needed (at the beginning of step)
     this.checkAndEmitPhotons();
