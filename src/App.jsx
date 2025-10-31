@@ -39,6 +39,7 @@ function App() {
   const [groundGravityEnabled, setGroundGravityEnabled] = useState(false)
   const [groundGravityCoefficient, setGroundGravityCoefficient] = useState(10)
   const [photonEmissionEnabled, setPhotonEmissionEnabled] = useState(false)
+  const [displayMagneticField, setDisplayMagneticField] = useState(false)
   const [mode3D, setMode3D] = useState(false)
   const [viewAxis, setViewAxis] = useState('xy') // 'xy', 'xz', or 'yz'
   const [numSteps, setNumSteps] = useState(1)
@@ -168,6 +169,13 @@ function App() {
   useEffect(() => {
     config.photonEmission.enabled = photonEmissionEnabled
   }, [photonEmissionEnabled])
+
+  // Disable magnetic field display when 3D mode is enabled
+  useEffect(() => {
+    if (mode3D && displayMagneticField) {
+      setDisplayMagneticField(false)
+    }
+  }, [mode3D, displayMagneticField])
   
   // Helper function to calculate depth-based color intensity (VMD-style)
   // Maps z-coordinate to brightness factor based on actual z-range in scene
@@ -217,6 +225,35 @@ function App() {
     return `rgb(${newR}, ${newG}, ${newB})`;
   };
 
+  // Calculate electric potential at a given point
+  // Returns an object with {potential, magnitude} where potential can be positive, negative, or zero
+  // Positive potential = blue, negative potential = red, zero = black
+  const calculateElectricPotentialAtPoint = (x, y, universe) => {
+    let totalPotential = 0;
+    
+    // Sum up electric potentials from all particles (excluding photons)
+    // Electric potential: V = K_electro * q / r (scalar, no minus sign)
+    for (const particle of universe.particles) {
+      if (particle.isPhoton) continue;
+      
+      const dx = particle.x - x;
+      const dy = particle.y - y;
+      const distanceSquared = dx * dx + dy * dy;
+      const distance = Math.sqrt(distanceSquared);
+      
+      if (distance < 1e-6) continue; // Skip if too close
+      
+      // Calculate electric potential: V = (K_electro * q) / r
+      const potential = (universe.electrostaticCoefficient * particle.charge) / (distance + 0.01);
+      totalPotential += potential;
+    }
+    
+    return {
+      potential: totalPotential,  // Can be positive, negative, or zero
+      magnitude: Math.abs(totalPotential)  // Magnitude for normalization
+    };
+  };
+
   const drawUniverse = () => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -234,6 +271,92 @@ function App() {
     const viewHeight = 1 / zoomLevel
     const viewMinX = zoomCenterX - viewWidth / 2
     const viewMinY = zoomCenterY - viewHeight / 2
+    
+    // Draw magnetic field visualization (only in 2D mode)
+    if (!mode3D && displayMagneticField && universe) {
+      const gridSize = 100;
+      const potentialValues = [];
+      let maxMagnitude = 0;
+      
+      // Calculate electric potentials for grid
+      for (let i = 0; i < gridSize; i++) {
+        for (let j = 0; j < gridSize; j++) {
+          // Map grid coordinates to universe coordinates (accounting for zoom)
+          const universeX = viewMinX + (i / gridSize) * viewWidth;
+          const universeY = viewMinY + (j / gridSize) * viewHeight;
+          
+          const result = calculateElectricPotentialAtPoint(universeX, universeY, universe);
+          potentialValues.push(result);
+          maxMagnitude = Math.max(maxMagnitude, result.magnitude);
+        }
+      }
+      
+      // Normalize and draw with improved scaling for small forces
+      const cellWidth = size / gridSize;
+      const cellHeight = size / gridSize;
+      
+      // Use relative threshold: if magnitude is less than 1% of max, treat as near-zero
+      const relativeThreshold = maxMagnitude * 0.01;
+      
+      // Calculate percentile thresholds for better normalization
+      // This helps when there are outliers (very strong fields near particles)
+      const magnitudes = potentialValues.map(v => v.magnitude).filter(m => m > 0);
+      magnitudes.sort((a, b) => a - b);
+      const percentile95 = magnitudes.length > 0 
+        ? magnitudes[Math.floor(magnitudes.length * 0.95)] 
+        : maxMagnitude;
+      const effectiveMax = Math.max(maxMagnitude, percentile95 * 0.5); // Use 95th percentile or at least 50% of max
+      
+      for (let i = 0; i < gridSize; i++) {
+        for (let j = 0; j < gridSize; j++) {
+          const idx = i * gridSize + j;
+          const { potential, magnitude } = potentialValues[idx];
+          
+          // Skip only if truly negligible (relative to max)
+          if (magnitude < relativeThreshold) {
+            // Very small potential: draw very faint color or skip
+            // Draw a very subtle indication so user knows there's a field, just weak
+            if (magnitude > relativeThreshold * 0.1) {
+              // Draw very faint color
+              const faintIntensity = Math.round((magnitude / relativeThreshold) * 30); // Max 30 for very faint
+              if (potential > 0) {
+                ctx.fillStyle = `rgba(0, 0, ${faintIntensity}, 0.2)`;
+              } else {
+                ctx.fillStyle = `rgba(${faintIntensity}, 0, 0, 0.2)`;
+              }
+              ctx.fillRect(i * cellWidth, j * cellHeight, cellWidth, cellHeight);
+            }
+            continue;
+          }
+          
+          // Use logarithmic scaling for better dynamic range
+          // Log scale compresses large values, expands small ones
+          const logMagnitude = Math.log1p(magnitude / effectiveMax); // log1p(x) = log(1+x), handles small values well
+          const logMax = Math.log1p(1.0); // When magnitude = effectiveMax
+          const normalizedMagnitude = logMax > 0 ? logMagnitude / logMax : 0;
+          
+          // Ensure minimum visibility: even small values get at least 20% intensity
+          const minIntensity = 0.2;
+          const adjustedIntensity = Math.max(minIntensity, normalizedMagnitude);
+          
+          if (potential > 0) {
+            // Positive potential: blue gradient
+            // Use a smoother gradient from dark blue to bright cyan-blue
+            const blueIntensity = Math.min(255, Math.round(adjustedIntensity * 255));
+            const greenComponent = Math.min(200, Math.round(adjustedIntensity * 200)); // Add some green for cyan
+            ctx.fillStyle = `rgba(0, ${greenComponent}, ${blueIntensity}, ${0.4 + adjustedIntensity * 0.4})`; // Opacity also scales
+          } else {
+            // Negative potential: red gradient
+            // Use a smoother gradient from dark red to bright orange-red
+            const redIntensity = Math.min(255, Math.round(adjustedIntensity * 255));
+            const greenComponent = Math.min(100, Math.round(adjustedIntensity * 100)); // Add some green for orange
+            ctx.fillStyle = `rgba(${redIntensity}, ${greenComponent}, 0, ${0.4 + adjustedIntensity * 0.4})`; // Opacity also scales
+          }
+          
+          ctx.fillRect(i * cellWidth, j * cellHeight, cellWidth, cellHeight);
+        }
+      }
+    }
     
     // Draw grid
     ctx.strokeStyle = '#1a1a1a'
@@ -650,6 +773,11 @@ function App() {
   useEffect(() => {
     drawUniverse()
   }, [zoomLevel, zoomCenterX, zoomCenterY])
+
+  // Redraw when magnetic field display setting changes
+  useEffect(() => {
+    drawUniverse()
+  }, [displayMagneticField])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-8">
@@ -1079,6 +1207,27 @@ function App() {
                   </div>
                   <p className="text-xs text-slate-400">
                     Electrons emit photons when moving fast; photons transfer energy on collision
+                  </p>
+                </div>
+                
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="displayMagneticField"
+                      checked={displayMagneticField}
+                      onChange={(e) => setDisplayMagneticField(e.target.checked)}
+                      disabled={mode3D}
+                      className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    />
+                    <Label htmlFor="displayMagneticField" className="text-white text-sm cursor-pointer">
+                      Display Magnetic Field
+                    </Label>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    {mode3D 
+                      ? "Only available in 2D mode" 
+                      : "Shows electromagnetic force intensity on a 40×40 grid (2D only)"}
                   </p>
                 </div>
                 
